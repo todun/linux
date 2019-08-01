@@ -1,20 +1,9 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * An implementation of host initiated guest snapshot.
  *
- *
  * Copyright (C) 2013, Microsoft, Inc.
  * Author : K. Y. Srinivasan <kys@microsoft.com>
- *
- * This program is free software; you can redistribute it and/or modify it
- * under the terms of the GNU General Public License version 2 as published
- * by the Free Software Foundation.
- *
- * This program is distributed in the hope that it will be useful, but
- * WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, GOOD TITLE or
- * NON INFRINGEMENT.  See the GNU General Public License for more
- * details.
- *
  */
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 
@@ -30,6 +19,16 @@
 #define VSS_MAJOR  5
 #define VSS_MINOR  0
 #define VSS_VERSION    (VSS_MAJOR << 16 | VSS_MINOR)
+
+#define VSS_VER_COUNT 1
+static const int vss_versions[] = {
+	VSS_VERSION
+};
+
+#define FW_VER_COUNT 1
+static const int fw_versions[] = {
+	UTIL_FW_VERSION
+};
 
 /*
  * Timeout values are based on expecations from host
@@ -202,8 +201,6 @@ static void vss_send_op(void)
 	}
 
 	kfree(vss_msg);
-
-	return;
 }
 
 static void vss_handle_request(struct work_struct *dummy)
@@ -293,10 +290,9 @@ void hv_vss_onchannelcallback(void *context)
 	u32 recvlen;
 	u64 requestid;
 	struct hv_vss_msg *vss_msg;
-
+	int vss_srv_version;
 
 	struct icmsg_hdr *icmsghdrp;
-	struct icmsg_negotiate *negop = NULL;
 
 	if (vss_transaction.state > HVUTIL_READY)
 		return;
@@ -309,9 +305,15 @@ void hv_vss_onchannelcallback(void *context)
 			sizeof(struct vmbuspipe_hdr)];
 
 		if (icmsghdrp->icmsgtype == ICMSGTYPE_NEGOTIATE) {
-			vmbus_prep_negotiate_resp(icmsghdrp, negop,
-				 recv_buffer, UTIL_FW_VERSION,
-				 VSS_VERSION);
+			if (vmbus_prep_negotiate_resp(icmsghdrp,
+				 recv_buffer, fw_versions, FW_VER_COUNT,
+				 vss_versions, VSS_VER_COUNT,
+				 NULL, &vss_srv_version)) {
+
+				pr_info("VSS IC version %d.%d\n",
+					vss_srv_version >> 16,
+					vss_srv_version & 0xFFFF);
+			}
 		} else {
 			vss_msg = (struct hv_vss_msg *)&recv_buffer[
 				sizeof(struct vmbuspipe_hdr) +
